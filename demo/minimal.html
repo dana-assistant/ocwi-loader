@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>OCWI Minimal Snippet Demo</title>
+  </head>
+  <body>
+    <div id="ocwi-demo"></div>
+
+    <script src="../dist/loader.js" data-ocwi-version="latest"></script>
+    <script>
+      window.OCWI('#ocwi-demo', {
+        api: {
+          lumaUrl: 'https://luma.amca.cz/api/v1/config/<public-hash>/',
+        },
+      })
+    </script>
+  </body>
+</html>
