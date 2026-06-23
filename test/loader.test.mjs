@@ -21,7 +21,7 @@ function makeScript(attrs = {}) {
   }
 }
 
-function runLoader({ attrs = {}, readyState = 'loading', appendLoads = false } = {}) {
+function runLoader({ attrs = {}, readyState = 'loading', appendLoads = false, appendErrors = false } = {}) {
   const writes = []
   const appended = []
   const warnings = []
@@ -69,6 +69,10 @@ function runLoader({ attrs = {}, readyState = 'loading', appendLoads = false } =
     head: {
       appendChild(script) {
         appended.push(script)
+        if (appendErrors) {
+          script.onerror()
+          return
+        }
         if (appendLoads) {
           context.window.OCWI = function OCWI() {
             return {
@@ -227,6 +231,58 @@ function runLoader({ attrs = {}, readyState = 'loading', appendLoads = false } =
   assert.deepEqual(calls[0], ['#chat'])
   assert.deepEqual(real.updates, [{ ui: { name: 'Queued' } }])
   assert.deepEqual(handle.getState(), { updates: 1 })
+}
+
+// Core bundle network failure (404 / 5xx): the browser fires the injected
+// script's onerror, which must reject deferred handles, record a diagnostic on
+// window.OCWI_LOADER, clear the loading lock, and warn. See src/loader.js:119-125.
+{
+  const { context, appended, warnings } = runLoader({
+    readyState: 'complete',
+  })
+  assert.equal(appended.length, 1)
+
+  const handle = context.window.OCWI('#chat')
+  let rejection = null
+  handle.ready.catch((error) => {
+    rejection = error
+  })
+
+  appended[0].onerror()
+  await Promise.resolve()
+
+  assert.match(context.window.OCWI_LOADER.error, /Failed to load OCWI core bundle/)
+  assert.match(context.window.OCWI_LOADER.error, /ocwi\.min\.js/)
+  assert.equal(context.window.OCWI_LOADER.loaded, false)
+  assert.equal(context.window.__OCWI_LOADER_LOADING__, false)
+  assert.ok(rejection, 'deferred handle.ready should reject on core load failure')
+  assert.match(rejection.message, /Failed to load OCWI core bundle/)
+  assert.ok(warnings.some((message) => message.includes('Failed to load OCWI core bundle')))
+}
+
+// CSP-blocked core load: a Content-Security-Policy that rejects the injected
+// script presents to the loader identically to a network failure (the script
+// element fires onerror without executing). The graceful failure + diagnostic
+// surface through window.OCWI_LOADER exactly as the 404/5xx case does.
+{
+  const { context, appended, warnings } = runLoader({
+    readyState: 'complete',
+    appendErrors: true,
+  })
+  assert.equal(appended.length, 1)
+  assert.match(context.window.OCWI_LOADER.error, /Failed to load OCWI core bundle/)
+  assert.equal(context.window.OCWI_LOADER.loaded, false)
+  assert.equal(context.window.__OCWI_LOADER_LOADING__, false)
+  assert.ok(warnings.some((message) => message.includes('Failed to load OCWI core bundle')))
+
+  const handle = context.window.OCWI('#chat')
+  let rejection = null
+  handle.ready.catch((error) => {
+    rejection = error
+  })
+  await Promise.resolve()
+  assert.equal(rejection, null)
+  assert.equal(handle.getState(), null)
 }
 
 console.log('loader tests passed')
