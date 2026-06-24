@@ -21,7 +21,7 @@ function makeScript(attrs = {}) {
   }
 }
 
-function runLoader({ attrs = {}, readyState = 'loading', appendLoads = false, appendErrors = false } = {}) {
+function runLoader({ attrs = {}, readyState = 'loading', appendLoads = false } = {}) {
   const writes = []
   const appended = []
   const warnings = []
@@ -69,10 +69,6 @@ function runLoader({ attrs = {}, readyState = 'loading', appendLoads = false, ap
     head: {
       appendChild(script) {
         appended.push(script)
-        if (appendErrors) {
-          script.onerror()
-          return
-        }
         if (appendLoads) {
           context.window.OCWI = function OCWI() {
             return {
@@ -267,9 +263,11 @@ function runLoader({ attrs = {}, readyState = 'loading', appendLoads = false, ap
 {
   const { context, appended, warnings } = runLoader({
     readyState: 'complete',
-    appendErrors: true,
   })
   assert.equal(appended.length, 1)
+
+  appended[0].onerror()
+
   assert.match(context.window.OCWI_LOADER.error, /Failed to load OCWI core bundle/)
   assert.equal(context.window.OCWI_LOADER.loaded, false)
   assert.equal(context.window.__OCWI_LOADER_LOADING__, false)
