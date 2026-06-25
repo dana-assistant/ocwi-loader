@@ -259,7 +259,9 @@ function runLoader({ attrs = {}, readyState = 'loading', appendLoads = false } =
 // CSP-blocked core load: a Content-Security-Policy that rejects the injected
 // script presents to the loader identically to a network failure (the script
 // element fires onerror without executing). The graceful failure + diagnostic
-// surface through window.OCWI_LOADER exactly as the 404/5xx case does.
+// surface through window.OCWI_LOADER exactly as the 404/5xx case does. Once the
+// failure is recorded, a NEW OCWI() handle must fail-fast (its .ready rejects
+// immediately) rather than queue forever, since no further load is attempted.
 {
   const { context, appended, warnings } = runLoader({
     readyState: 'complete',
@@ -279,7 +281,8 @@ function runLoader({ attrs = {}, readyState = 'loading', appendLoads = false } =
     rejection = error
   })
   await Promise.resolve()
-  assert.equal(rejection, null)
+  assert.ok(rejection, 'a handle created after a permanent load failure must fail-fast')
+  assert.match(rejection.message, /Failed to load OCWI core bundle/)
   assert.equal(handle.getState(), null)
 }
 

@@ -146,6 +146,10 @@
 
     var proxy = function () {
       var handle = createDeferredHandle();
+      if (meta.error) {
+        handle.reject(new Error(meta.error));
+        return handle.publicHandle;
+      }
       queue.push({
         args: Array.prototype.slice.call(arguments),
         handle: handle
