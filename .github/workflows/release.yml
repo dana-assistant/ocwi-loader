@@ -9,22 +9,15 @@ name: Release
 #   2. set `ocwiLoader.coreVersion` to the published ocwi-core to pin (or leave
 #      "latest"); commit
 #   3. push tag v<version>
-# A workflow_dispatch `core_version` input overrides the pin for an ad-hoc build.
 #
 # Prerequisites (set by a repo admin, not by CI):
 #   - NPM_TOKEN secret: an npm *automation* token with publish rights to ocwi-loader.
-# Never runs on a branch push, so merging it does not publish anything.
+# Tag-only: never runs on a branch push, so merging it does not publish anything.
 
 on:
   push:
     tags:
       - 'v*'
-  workflow_dispatch:
-    inputs:
-      core_version:
-        description: 'ocwi-core version to bake in (e.g. 1.1.1 or latest). Empty = package.json default.'
-        required: false
-        default: ''
 
 concurrency:
   group: release-${{ github.ref }}
@@ -50,7 +43,6 @@ jobs:
         run: npm ci
 
       - name: Verify tag matches package.json version
-        if: github.ref_type == 'tag'
         run: |
           TAG="${GITHUB_REF_NAME#v}"
           PKG="$(node -p "require('./package.json').version")"
@@ -66,10 +58,7 @@ jobs:
       - name: Resolve ocwi-core version to bake in
         id: core
         run: |
-          CV="${{ github.event.inputs.core_version }}"
-          if [ -z "$CV" ]; then
-            CV="$(node -p "require('./package.json').ocwiLoader.coreVersion")"
-          fi
+          CV="$(node -p "require('./package.json').ocwiLoader.coreVersion")"
           echo "version=$CV" >> "$GITHUB_OUTPUT"
           echo "Baking ocwi-core@$CV into the loader"
 
