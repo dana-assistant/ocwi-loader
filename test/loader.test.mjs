@@ -21,7 +21,13 @@ function makeScript(attrs = {}) {
   }
 }
 
-function runLoader({ attrs = {}, readyState = 'loading', appendLoads = false } = {}) {
+function runLoader({
+  attrs = {},
+  readyState = 'loading',
+  appendLoads = false,
+  seedWindow = {},
+  noCreateElement = false,
+} = {}) {
   const writes = []
   const appended = []
   const warnings = []
@@ -91,6 +97,9 @@ function runLoader({ attrs = {}, readyState = 'loading', appendLoads = false } =
 
   context.document = document
   context.window.document = document
+
+  Object.assign(context.window, seedWindow)
+  if (noCreateElement) delete document.createElement
 
   vm.runInNewContext(loaderSource, context)
   return { context, writes, appended, warnings }
@@ -284,6 +293,81 @@ function runLoader({ attrs = {}, readyState = 'loading', appendLoads = false } =
   assert.ok(rejection, 'a handle created after a permanent load failure must fail-fast')
   assert.match(rejection.message, /Failed to load OCWI core bundle/)
   assert.equal(handle.getState(), null)
+}
+
+// G9: already-loaded short-circuit. When window.OCWI is already the real widget
+// fn, the loader records meta.loaded/already-loaded and returns without injecting.
+{
+  function realOcwi() {}
+  const { context, writes, appended } = runLoader({
+    readyState: 'complete',
+    seedWindow: { OCWI: realOcwi },
+  })
+  assert.equal(writes.length, 0)
+  assert.equal(appended.length, 0)
+  assert.equal(context.window.OCWI_LOADER.loaded, true)
+  assert.equal(context.window.OCWI_LOADER.mode, 'already-loaded')
+  assert.equal(context.window.OCWI, realOcwi)
+}
+
+// G10: a concurrent second loader instance (the first set __OCWI_LOADER_LOADING__)
+// installs the deferred proxy instead of injecting the core again.
+{
+  const { context, writes, appended } = runLoader({
+    readyState: 'complete',
+    seedWindow: { __OCWI_LOADER_LOADING__: true },
+  })
+  assert.equal(writes.length, 0)
+  assert.equal(appended.length, 0)
+  assert.equal(typeof context.window.OCWI, 'function')
+  assert.equal(context.window.OCWI.__ocwiLoaderProxy, true)
+}
+
+// G11: data-ocwi-package / -cdn-base / -file resolve into the core URL (a concrete
+// version means no cache-buster).
+{
+  const { context } = runLoader({
+    attrs: {
+      'data-ocwi-package': 'my-core',
+      'data-ocwi-cdn-base': 'https://cdn.test/base/',
+      'data-ocwi-file': '/dist/bundle.js',
+      'data-ocwi-version': '1.2.3',
+    },
+  })
+  assert.equal(context.window.OCWI_LOADER.coreUrl, 'https://cdn.test/base/my-core@1.2.3/dist/bundle.js')
+  assert.equal(context.window.OCWI_LOADER.corePackage, 'my-core')
+}
+
+// G12: handle.config = x set before load is queued, then flushed onto the real
+// target after the core loads.
+{
+  const { context, appended } = runLoader({ readyState: 'complete' })
+  const handle = context.window.OCWI('#chat')
+  handle.config = { ui: { name: 'Queued config' } }
+
+  context.window.OCWI = function OCWI() {
+    return { config: undefined, getState() { return null } }
+  }
+  appended[0].onload()
+  await handle.ready
+
+  assert.deepEqual(handle.config, { ui: { name: 'Queued config' } })
+}
+
+// G17: missing document.createElement in dynamic mode -> failDeferredProxy. No
+// script is appended, and an already-queued deferred handle is rejected.
+{
+  let rejected = null
+  const { appended } = runLoader({
+    readyState: 'complete',
+    noCreateElement: true,
+    seedWindow: {
+      __OCWI_LOADER_QUEUE__: [{ handle: { reject(error) { rejected = error } } }],
+    },
+  })
+  assert.equal(appended.length, 0)
+  assert.ok(rejected, 'a queued handle must be rejected when createElement is missing')
+  assert.match(rejected.message, /createElement/)
 }
 
 console.log('loader tests passed')
